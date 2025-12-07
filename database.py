@@ -29,6 +29,15 @@ class Database:
         self.cur.execute("SELECT * FROM customers")
         return self.cur.fetchall()
 
+    def view_customers_sorted(self, column, order):
+        self.cur.execute(f"SELECT * FROM customers ORDER BY {column} {order}")
+        return self.cur.fetchall()
+
+    def search_customers(self, text):
+        self.cur.execute("SELECT * FROM customers WHERE name LIKE ? OR surname LIKE ? OR company LIKE ?",
+                         (f"%{text}%", f"%{text}%", f"%{text}%"))
+        return self.cur.fetchall()
+
     def update_customer(self, customer_id, name, surname, patronymic, age, city, company):
         self.cur.execute("""
             UPDATE customers SET name = ?, surname = ?, patronymic = ?, age = ?, city = ?, company = ?

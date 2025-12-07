@@ -2,14 +2,17 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QMessageBox, QHeaderView
+    QTableWidgetItem, QMessageBox, QHeaderView, QFileDialog
 )
+import csv
 from database import Database
 
 class App(QWidget):
     def __init__(self, db):
         super().__init__()
         self.db = db
+        self.current_sort_column = 0
+        self.current_sort_order = 'ASC'
         self.init_ui()
 
     def init_ui(self):
@@ -58,20 +61,33 @@ class App(QWidget):
         self.delete_btn.clicked.connect(self.delete_customer)
         self.clear_btn = QPushButton('Clear Fields')
         self.clear_btn.clicked.connect(self.clear_fields)
+        self.export_btn = QPushButton('Export to CSV')
+        self.export_btn.clicked.connect(self.export_to_csv)
 
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.add_btn)
         button_layout.addWidget(self.update_btn)
         button_layout.addWidget(self.delete_btn)
         button_layout.addWidget(self.clear_btn)
+        button_layout.addWidget(self.export_btn)
         left_panel.addLayout(button_layout)
 
         # Right panel for the table
         right_panel = QVBoxLayout()
+
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search by name, surname, or company")
+        self.search_input.textChanged.connect(self.search_customers)
+        search_layout.addWidget(self.search_input)
+        right_panel.addLayout(search_layout)
+
         self.table = QTableWidget()
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(['ID', 'Name', 'Surname', 'Patronymic', 'Age', 'City', 'Company'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().sectionClicked.connect(self.sort_table)
         self.table.itemClicked.connect(self.select_customer)
         right_panel.addWidget(self.table)
 
@@ -82,11 +98,22 @@ class App(QWidget):
 
     def populate_table(self):
         self.table.setRowCount(0)
-        for row_data in self.db.view_customers():
+        column_names = ['id', 'name', 'surname', 'patronymic', 'age', 'city', 'company']
+        sort_column_name = column_names[self.current_sort_column]
+        
+        for row_data in self.db.view_customers_sorted(sort_column_name, self.current_sort_order):
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
             for col, data in enumerate(row_data):
                 self.table.setItem(row_position, col, QTableWidgetItem(str(data)))
+
+    def sort_table(self, logicalIndex):
+        if logicalIndex == self.current_sort_column:
+            self.current_sort_order = 'DESC' if self.current_sort_order == 'ASC' else 'ASC'
+        else:
+            self.current_sort_column = logicalIndex
+            self.current_sort_order = 'ASC'
+        self.populate_table()
 
     def add_customer(self):
         name = self.name_input.text()
@@ -97,9 +124,13 @@ class App(QWidget):
         company = self.company_input.text()
 
         if name:
-            self.db.add_customer(name, surname, patronymic, age, city, company)
-            self.populate_table()
-            self.clear_fields()
+            try:
+                age = int(age)
+                self.db.add_customer(name, surname, patronymic, age, city, company)
+                self.populate_table()
+                self.clear_fields()
+            except ValueError:
+                QMessageBox.critical(self, 'Error', 'Age must be a number.')
         else:
             QMessageBox.critical(self, 'Error', 'Name field cannot be empty.')
 
@@ -121,8 +152,12 @@ class App(QWidget):
             age = self.age_input.text()
             city = self.city_input.text()
             company = self.company_input.text()
-            self.db.update_customer(self.selected_item_id, name, surname, patronymic, age, city, company)
-            self.populate_table()
+            try:
+                age = int(age)
+                self.db.update_customer(self.selected_item_id, name, surname, patronymic, age, city, company)
+                self.populate_table()
+            except ValueError:
+                QMessageBox.critical(self, 'Error', 'Age must be a number.')
         else:
             QMessageBox.critical(self, 'Error', 'Please select a customer to update.')
 
@@ -142,6 +177,33 @@ class App(QWidget):
         self.age_input.clear()
         self.city_input.clear()
         self.company_input.clear()
+
+    def search_customers(self):
+        search_text = self.search_input.text()
+        if search_text:
+            self.table.setRowCount(0)
+            for row_data in self.db.search_customers(search_text):
+                row_position = self.table.rowCount()
+                self.table.insertRow(row_position)
+                for col, data in enumerate(row_data):
+                    self.table.setItem(row_position, col, QTableWidgetItem(str(data)))
+        else:
+            self.populate_table()
+
+
+    def export_to_csv(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save as CSV", "", "CSV Files (*.csv)")
+        if file_path:
+            with open(file_path, 'w', newline='') as csvfile:
+                csv_writer = csv.writer(csvfile)
+                # Write header
+                header = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
+                csv_writer.writerow(header)
+                # Write data
+                for row in range(self.table.rowCount()):
+                    row_data = [self.table.item(row, col).text() for col in range(self.table.columnCount())]
+                    csv_writer.writerow(row_data)
+            QMessageBox.information(self, 'Success', 'Data exported successfully!')
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
